@@ -61,8 +61,8 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	var logChan = make(chan []byte, 4096)
-	defer close(logChan)
+	var connChan = make(map[*websocket.Conn]chan []byte)
+	var mutex sync.Mutex
 
 	// start up udp log server
 	go func() {
@@ -93,8 +93,12 @@ func main() {
 				return
 			}
 
-			logChan <- buf[:n]
-			log.Println("send", n, "bytes data to log channel")
+			mutex.Lock()
+			for _, logChan := range connChan {
+				logChan <- buf[:n]
+				log.Println("send", n, "bytes data to log channel")
+			}
+			mutex.Unlock()
 		}
 	}()
 
@@ -137,6 +141,11 @@ func main() {
 			}
 			log.Println("message type:", mt)
 			log.Println(string(message))
+
+			mutex.Lock()
+			logChan := make(chan []byte, 4096)
+			connChan[conn] = logChan
+			mutex.Unlock()
 
 			for {
 				buf := <-logChan
